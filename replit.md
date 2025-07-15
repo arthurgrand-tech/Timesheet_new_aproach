@@ -1,8 +1,8 @@
-# Timesheet Management System
+# Timesheet Application - Multi-Tenant SaaS
 
 ## Overview
 
-This is a full-stack timesheet management application built with React (frontend) and Express.js (backend). The application features multi-tenant architecture with role-based access control, allowing organizations to manage employee timesheets, projects, and approvals efficiently.
+This is a multi-tenant SaaS timesheet application built with React, Node.js, and PostgreSQL. The application allows organizations to manage employee timesheets with role-based access control and subscription tiers. It features a modern architecture with a clean separation between frontend and backend components.
 
 ## User Preferences
 
@@ -12,90 +12,100 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Architecture
 - **Framework**: React 18 with TypeScript
+- **UI Library**: Radix UI components with Tailwind CSS styling
+- **State Management**: React Query (TanStack Query) for server state management
 - **Routing**: Wouter for client-side routing
-- **State Management**: TanStack Query (React Query) for server state
-- **UI Components**: Radix UI with shadcn/ui component system
-- **Styling**: Tailwind CSS with custom CSS variables for theming
+- **Forms**: React Hook Form with Zod validation
 - **Build Tool**: Vite for development and production builds
 
 ### Backend Architecture
-- **Framework**: Express.js with TypeScript
+- **Runtime**: Node.js with Express.js server
 - **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Passport.js with local strategy using session-based auth
-- **Session Storage**: PostgreSQL session store
-- **Database Provider**: Neon Database (serverless PostgreSQL)
+- **Authentication**: JWT-based authentication with bcrypt password hashing
+- **Session Management**: Express sessions with PostgreSQL session store
+- **API Design**: RESTful API with JSON responses
+
+### Multi-Tenant Structure
+The application implements a multi-tenant architecture where:
+- Each organization has its own isolated data space
+- Users belong to specific organizations
+- All data operations are scoped to the user's organization
+- Subscription limits are enforced per organization
 
 ## Key Components
 
-### Database Schema
-- **Multi-tenant**: `tenants` table with organization isolation
-- **User Management**: `users` table with role-based access (user, manager, admin)
-- **Project Management**: `projects` and `tasks` tables for organizing work
-- **Time Tracking**: `timesheets` and `timesheet_entries` for time logging
-- **Approval Workflow**: Built-in approval status tracking
-
 ### Authentication & Authorization
-- **Session-based Authentication**: Using Passport.js with express-session
-- **Role-based Access Control**: Three roles with different permissions
-  - User: Basic timesheet management
-  - Manager: Approval capabilities and team reports
-  - Admin: Full system access including user management
-- **Tenant Isolation**: All data operations are scoped to the user's tenant
+- JWT token-based authentication
+- Role-based access control with three levels:
+  - **Employee**: Basic timesheet submission and viewing
+  - **Supervisor**: Team management and timesheet approval
+  - **Super Admin**: Organization-wide management and settings
+- Organization-scoped data access middleware
 
-### API Structure
-- **RESTful Design**: Standard REST endpoints for all resources
-- **Protected Routes**: Middleware for authentication and role checking
-- **Tenant Middleware**: Automatic tenant scoping for data access
-- **Error Handling**: Centralized error handling with proper HTTP status codes
+### Database Schema
+- **Organizations**: Multi-tenant organization management
+- **Users**: Employee data with role-based permissions
+- **Projects**: Project management with client tracking
+- **Tasks**: Task assignments linked to projects
+- **Timesheets**: Weekly timesheet submissions
+- **Timesheet Entries**: Individual time entries per project/task
+- **Audit Logs**: Activity tracking for compliance
+
+### Frontend Components
+- **Layout System**: Responsive sidebar navigation with mobile support
+- **Modal System**: Reusable modals for data entry and management
+- **Form Components**: Standardized form inputs with validation
+- **Dashboard**: Overview widgets and quick actions
+- **Data Tables**: Sortable, filterable data presentation
 
 ## Data Flow
 
-1. **User Authentication**: Users log in through the auth page, sessions are managed server-side
-2. **Data Fetching**: React Query handles all API calls with caching and error handling
-3. **Timesheet Management**: Users create weekly timesheets with entries linked to projects/tasks
-4. **Approval Workflow**: Managers can approve/reject submitted timesheets
-5. **Reporting**: Managers and admins can view aggregated timesheet data
+1. **User Authentication**: Login validates credentials and returns JWT token
+2. **Organization Context**: All API requests include organization context
+3. **Role-Based Access**: Middleware checks user permissions for each endpoint
+4. **Data Filtering**: Database queries automatically scope to user's organization
+5. **Real-time Updates**: React Query manages cache invalidation and updates
 
 ## External Dependencies
 
-### Frontend Dependencies
-- **@tanstack/react-query**: Server state management
-- **@radix-ui/***: Accessible UI component primitives
-- **wouter**: Lightweight routing library
-- **react-hook-form**: Form handling and validation
-- **@hookform/resolvers**: Form validation with Zod
-- **lucide-react**: Icon library
-- **tailwindcss**: Utility-first CSS framework
+### Database
+- **Neon Database**: Serverless PostgreSQL hosting
+- **Drizzle ORM**: Type-safe database operations
+- **Connection Pooling**: Efficient database connection management
 
-### Backend Dependencies
-- **drizzle-orm**: Type-safe SQL ORM
-- **@neondatabase/serverless**: Serverless PostgreSQL client
-- **passport**: Authentication middleware
-- **express-session**: Session management
-- **connect-pg-simple**: PostgreSQL session store
-- **drizzle-zod**: Schema validation integration
+### UI/UX
+- **Radix UI**: Accessible component primitives
+- **Tailwind CSS**: Utility-first styling framework
+- **Lucide Icons**: Modern icon library
+- **React Hook Form**: Form state management
+- **Zod**: Runtime type validation
+
+### Development Tools
+- **TypeScript**: Static type checking
+- **Vite**: Fast build tool and development server
+- **ESBuild**: Production bundling
+- **PostCSS**: CSS processing
 
 ## Deployment Strategy
 
-### Development
-- **Frontend**: Vite dev server with hot module replacement
-- **Backend**: tsx for TypeScript execution in development
-- **Database**: Neon Database with connection pooling
-- **Environment**: Environment variables for database URL and session secrets
-
 ### Production Build
-- **Frontend**: Vite builds static assets to `dist/public`
-- **Backend**: esbuild bundles server code to `dist/index.js`
-- **Database Migrations**: Drizzle Kit handles schema migrations
-- **Deployment**: Single Node.js process serving both API and static files
+- Frontend builds to static files served by Express
+- Backend compiles to single JavaScript file
+- Environment variables manage database connections
+- Session storage uses PostgreSQL for persistence
 
-### Key Architectural Decisions
+### Development Workflow
+- Hot module replacement for frontend development
+- Automatic TypeScript checking
+- Database migrations with Drizzle Kit
+- Replit-optimized development environment
 
-1. **Multi-tenant Architecture**: Chosen to support multiple organizations in a single deployment while maintaining data isolation
-2. **Session-based Auth**: Selected over JWT for simplicity and better security for web applications
-3. **Drizzle ORM**: Preferred for type safety and better TypeScript integration compared to traditional ORMs
-4. **React Query**: Implemented for efficient server state management and caching
-5. **Radix UI**: Chosen for accessibility-first component primitives
-6. **Neon Database**: Selected for serverless PostgreSQL with automatic scaling
+### Key Features
+- **Multi-tenant data isolation**
+- **Subscription-based user limits**
+- **Role-based feature access**
+- **Audit logging for compliance**
+- **Responsive mobile-first design**
+- **Real-time data synchronization**
 
-The application follows a traditional MVC pattern on the backend with a modern React architecture on the frontend, emphasizing type safety, accessibility, and maintainability throughout the stack.
+The application is designed to scale with growing organizations while maintaining strict data isolation and security controls.

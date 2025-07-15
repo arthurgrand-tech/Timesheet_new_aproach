@@ -1,361 +1,181 @@
-import { 
-  mysqlTable, 
-  text, 
-  int, 
-  boolean, 
-  timestamp, 
-  decimal, 
-  date, 
-  json,
-  varchar,
-  index,
-  uniqueIndex
-} from "drizzle-orm/mysql-core";
+import { pgTable, text, serial, integer, boolean, timestamp, numeric, date, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Tenants table for multi-tenancy with enhanced features
-export const tenants = mysqlTable("tenants", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
-  slug: varchar("slug", { length: 100 }).notNull().unique(),
-  domain: varchar("domain", { length: 255 }), // Custom domain support
-  subdomain: varchar("subdomain", { length: 100 }), // Subdomain support
-  settings: json("settings").default({}),
-  plan: varchar("plan", { length: 50 }).default("free"), // Subscription plan
-  maxUsers: int("max_users").default(10),
-  isActive: boolean("is_active").default(true),
-  trialEndsAt: timestamp("trial_ends_at"),
-  subscriptionEndsAt: timestamp("subscription_ends_at"),
+// Organizations (Tenants)
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  domain: text("domain").notNull().unique(),
+  subscriptionPlan: text("subscription_plan").notNull().default("free"), // free, standard, advanced
+  subscriptionStatus: text("subscription_status").notNull().default("active"),
+  maxUsers: integer("max_users").notNull().default(5),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  slugIdx: uniqueIndex("slug_idx").on(table.slug),
-  domainIdx: index("domain_idx").on(table.domain),
-  subdomainIdx: index("subdomain_idx").on(table.subdomain),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Users table with enhanced role-based access and tenant isolation
-export const users = mysqlTable("users", {
-  id: int("id").primaryKey().autoincrement(),
-  username: varchar("username", { length: 100 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
+// Users
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  email: text("email").notNull().unique(),
+  username: text("username").notNull(),
   password: text("password").notNull(),
-  firstName: varchar("first_name", { length: 100 }).notNull(),
-  lastName: varchar("last_name", { length: 100 }).notNull(),
-  role: varchar("role", { length: 20 }).notNull().$type<'user' | 'manager' | 'admin' | 'owner'>(),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  permissions: json("permissions").default([]), // Custom permissions per user
-  avatar: text("avatar"), // Profile picture URL
-  timezone: varchar("timezone", { length: 50 }).default("UTC"),
-  isActive: boolean("is_active").default(true),
-  lastLoginAt: timestamp("last_login_at"),
-  emailVerifiedAt: timestamp("email_verified_at"),
-  invitedBy: int("invited_by").references(() => users.id),
-  invitedAt: timestamp("invited_at"),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  role: text("role").notNull().default("employee"), // employee, supervisor, super_admin
+  department: text("department"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  tenantUserIdx: uniqueIndex("tenant_user_idx").on(table.tenantId, table.username),
-  tenantEmailIdx: uniqueIndex("tenant_email_idx").on(table.tenantId, table.email),
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  roleIdx: index("role_idx").on(table.role),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Departments for better organization within tenants
-export const departments = mysqlTable("departments", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
+// Projects
+export const projects = pgTable("projects", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  name: text("name").notNull(),
   description: text("description"),
-  managerId: int("manager_id").references(() => users.id),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  managerIdx: index("manager_idx").on(table.managerId),
-}));
-
-// Enhanced projects table with better categorization
-export const projects = mysqlTable("projects", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  clientName: varchar("client_name", { length: 255 }),
-  clientEmail: varchar("client_email", { length: 255 }),
-  color: varchar("color", { length: 7 }).default("#1976D2"),
-  status: varchar("status", { length: 20 }).default("active").$type<'active' | 'on_hold' | 'completed' | 'cancelled'>(),
-  priority: varchar("priority", { length: 20 }).default("medium").$type<'low' | 'medium' | 'high' | 'urgent'>(),
-  budget: decimal("budget", { precision: 10, scale: 2 }),
-  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
-  departmentId: int("department_id").references(() => departments.id),
-  managerId: int("manager_id").references(() => users.id),
+  clientName: text("client_name"),
+  status: text("status").notNull().default("active"), // active, completed, on_hold
   startDate: date("start_date"),
   endDate: date("end_date"),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  isActive: boolean("is_active").default(true),
-  isBillable: boolean("is_billable").default(true),
-  requiresApproval: boolean("requires_approval").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  statusIdx: index("status_idx").on(table.status),
-  managerIdx: index("manager_idx").on(table.managerId),
-  departmentIdx: index("department_idx").on(table.departmentId),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Project assignments for team members
-export const projectAssignments = mysqlTable("project_assignments", {
-  id: int("id").primaryKey().autoincrement(),
-  projectId: int("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  userId: int("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  role: varchar("role", { length: 50 }).default("member"), // member, lead, viewer
-  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
-  canSubmitTime: boolean("can_submit_time").default(true),
-  canViewReports: boolean("can_view_reports").default(false),
-  assignedAt: timestamp("assigned_at").defaultNow(),
-  assignedBy: int("assigned_by").references(() => users.id),
-}, (table) => ({
-  projectUserIdx: uniqueIndex("project_user_idx").on(table.projectId, table.userId),
-  projectIdx: index("project_idx").on(table.projectId),
-  userIdx: index("user_idx").on(table.userId),
-}));
-
-// Enhanced tasks table
-export const tasks = mysqlTable("tasks", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
+// Tasks
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  projectId: integer("project_id").references(() => projects.id),
+  name: text("name").notNull(),
   description: text("description"),
-  projectId: int("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  assignedTo: int("assigned_to").references(() => users.id),
-  status: varchar("status", { length: 20 }).default("open").$type<'open' | 'in_progress' | 'completed' | 'cancelled'>(),
-  priority: varchar("priority", { length: 20 }).default("medium").$type<'low' | 'medium' | 'high' | 'urgent'>(),
-  estimatedHours: decimal("estimated_hours", { precision: 5, scale: 2 }),
-  dueDate: date("due_date"),
-  isBillable: boolean("is_billable").default(true),
-  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
-  isActive: boolean("is_active").default(true),
+  priority: text("priority").notNull().default("medium"), // low, medium, high
+  status: text("status").notNull().default("pending"), // pending, in_progress, completed
+  assignedTo: integer("assigned_to").references(() => users.id),
+  estimatedHours: numeric("estimated_hours"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  projectIdx: index("project_idx").on(table.projectId),
-  assignedToIdx: index("assigned_to_idx").on(table.assignedTo),
-  statusIdx: index("status_idx").on(table.status),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Enhanced timesheets table with better tracking
-export const timesheets = mysqlTable("timesheets", {
-  id: int("id").primaryKey().autoincrement(),
-  userId: int("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  weekStartDate: date("week_start_date").notNull(),
-  weekEndDate: date("week_end_date").notNull(),
-  status: varchar("status", { length: 20 }).notNull().$type<'draft' | 'submitted' | 'approved' | 'rejected' | 'locked'>().default('draft'),
-  totalHours: decimal("total_hours", { precision: 5, scale: 2 }).default("0.00"),
-  billableHours: decimal("billable_hours", { precision: 5, scale: 2 }).default("0.00"),
-  overtimeHours: decimal("overtime_hours", { precision: 5, scale: 2 }).default("0.00"),
-  approvedBy: int("approved_by").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
+// Timesheets
+export const timesheets = pgTable("timesheets", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  userId: integer("user_id").references(() => users.id),
+  weekEnding: date("week_ending").notNull(),
+  status: text("status").notNull().default("draft"), // draft, submitted, approved, rejected
+  totalHours: numeric("total_hours").notNull().default("0"),
+  comments: text("comments"),
   submittedAt: timestamp("submitted_at"),
-  rejectionReason: text("rejection_reason"),
-  notes: text("notes"),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  userWeekIdx: uniqueIndex("user_week_idx").on(table.userId, table.weekStartDate),
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  statusIdx: index("status_idx").on(table.status),
-  weekIdx: index("week_idx").on(table.weekStartDate),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Enhanced timesheet entries table
-export const timesheetEntries = mysqlTable("timesheet_entries", {
-  id: int("id").primaryKey().autoincrement(),
-  timesheetId: int("timesheet_id").references(() => timesheets.id, { onDelete: "cascade" }).notNull(),
-  projectId: int("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  taskId: int("task_id").references(() => tasks.id),
-  description: text("description"),
-  entryDate: date("entry_date").notNull(),
-  startTime: varchar("start_time", { length: 8 }), // HH:MM:SS format
-  endTime: varchar("end_time", { length: 8 }), // HH:MM:SS format
-  breakDuration: decimal("break_duration", { precision: 4, scale: 2 }).default("0.00"), // Break time in hours
-  hours: decimal("hours", { precision: 4, scale: 2 }).default("0.00"),
-  isBillable: boolean("is_billable").default(true),
-  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
-  location: varchar("location", { length: 255 }), // Work location
-  isRemote: boolean("is_remote").default(false),
-  tags: json("tags").default([]), // Tags for categorization
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+// Timesheet Entries
+export const timesheetEntries = pgTable("timesheet_entries", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  timesheetId: integer("timesheet_id").references(() => timesheets.id),
+  projectId: integer("project_id").references(() => projects.id),
+  taskId: integer("task_id").references(() => tasks.id),
+  monday: numeric("monday").notNull().default("0"),
+  tuesday: numeric("tuesday").notNull().default("0"),
+  wednesday: numeric("wednesday").notNull().default("0"),
+  thursday: numeric("thursday").notNull().default("0"),
+  friday: numeric("friday").notNull().default("0"),
+  saturday: numeric("saturday").notNull().default("0"),
+  sunday: numeric("sunday").notNull().default("0"),
+  totalHours: numeric("total_hours").notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  timesheetIdx: index("timesheet_idx").on(table.timesheetId),
-  projectIdx: index("project_idx").on(table.projectId),
-  taskIdx: index("task_idx").on(table.taskId),
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  dateIdx: index("date_idx").on(table.entryDate),
-}));
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Time tracking sessions for real-time tracking
-export const timeTrackingSessions = mysqlTable("time_tracking_sessions", {
-  id: int("id").primaryKey().autoincrement(),
-  userId: int("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  projectId: int("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  taskId: int("task_id").references(() => tasks.id),
-  description: text("description"),
-  startTime: timestamp("start_time").notNull(),
-  endTime: timestamp("end_time"),
-  duration: int("duration"), // Duration in seconds
-  isActive: boolean("is_active").default(true),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+// Audit Logs
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  userId: integer("user_id").references(() => users.id),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id"),
+  oldValues: text("old_values"), // JSON string
+  newValues: text("new_values"), // JSON string
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  userIdx: index("user_idx").on(table.userId),
-  projectIdx: index("project_idx").on(table.projectId),
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-  activeIdx: index("active_idx").on(table.isActive),
-}));
-
-// Approval workflows
-export const approvalWorkflows = mysqlTable("approval_workflows", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  tenantId: int("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  steps: json("steps").default([]), // Array of approval steps
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-}, (table) => ({
-  tenantIdx: index("tenant_idx").on(table.tenantId),
-}));
+});
 
 // Relations
-export const tenantsRelations = relations(tenants, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
   users: many(users),
   projects: many(projects),
-  departments: many(departments),
+  tasks: many(tasks),
   timesheets: many(timesheets),
   timesheetEntries: many(timesheetEntries),
-  timeTrackingSessions: many(timeTrackingSessions),
-  approvalWorkflows: many(approvalWorkflows),
+  auditLogs: many(auditLogs),
 }));
 
 export const usersRelations = relations(users, ({ one, many }) => ({
-  tenant: one(tenants, {
-    fields: [users.tenantId],
-    references: [tenants.id],
-  }),
-  invitedBy: one(users, {
-    fields: [users.invitedBy],
-    references: [users.id],
-    relationName: "inviter",
-  }),
-  invitees: many(users, {
-    relationName: "inviter",
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
   }),
   timesheets: many(timesheets),
-  approvedTimesheets: many(timesheets, {
-    relationName: "approver",
-  }),
-  projectAssignments: many(projectAssignments),
-  managedProjects: many(projects, {
-    relationName: "manager",
-  }),
-  managedDepartments: many(departments, {
-    relationName: "manager",
-  }),
-  assignedTasks: many(tasks, {
-    relationName: "assignee",
-  }),
-  timeTrackingSessions: many(timeTrackingSessions),
-}));
-
-export const departmentsRelations = relations(departments, ({ one, many }) => ({
-  tenant: one(tenants, {
-    fields: [departments.tenantId],
-    references: [tenants.id],
-  }),
-  manager: one(users, {
-    fields: [departments.managerId],
-    references: [users.id],
-    relationName: "manager",
-  }),
-  projects: many(projects),
+  assignedTasks: many(tasks),
+  auditLogs: many(auditLogs),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
-  tenant: one(tenants, {
-    fields: [projects.tenantId],
-    references: [tenants.id],
-  }),
-  department: one(departments, {
-    fields: [projects.departmentId],
-    references: [departments.id],
-  }),
-  manager: one(users, {
-    fields: [projects.managerId],
-    references: [users.id],
-    relationName: "manager",
+  organization: one(organizations, {
+    fields: [projects.organizationId],
+    references: [organizations.id],
   }),
   tasks: many(tasks),
   timesheetEntries: many(timesheetEntries),
-  projectAssignments: many(projectAssignments),
-  timeTrackingSessions: many(timeTrackingSessions),
-}));
-
-export const projectAssignmentsRelations = relations(projectAssignments, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectAssignments.projectId],
-    references: [projects.id],
-  }),
-  user: one(users, {
-    fields: [projectAssignments.userId],
-    references: [users.id],
-  }),
-  assignedBy: one(users, {
-    fields: [projectAssignments.assignedBy],
-    references: [users.id],
-    relationName: "assigner",
-  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [tasks.organizationId],
+    references: [organizations.id],
+  }),
   project: one(projects, {
     fields: [tasks.projectId],
     references: [projects.id],
   }),
-  assignedTo: one(users, {
+  assignedUser: one(users, {
     fields: [tasks.assignedTo],
     references: [users.id],
-    relationName: "assignee",
   }),
   timesheetEntries: many(timesheetEntries),
-  timeTrackingSessions: many(timeTrackingSessions),
 }));
 
 export const timesheetsRelations = relations(timesheets, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [timesheets.organizationId],
+    references: [organizations.id],
+  }),
   user: one(users, {
     fields: [timesheets.userId],
     references: [users.id],
   }),
-  tenant: one(tenants, {
-    fields: [timesheets.tenantId],
-    references: [tenants.id],
-  }),
   approver: one(users, {
     fields: [timesheets.approvedBy],
     references: [users.id],
-    relationName: "approver",
   }),
   entries: many(timesheetEntries),
 }));
 
 export const timesheetEntriesRelations = relations(timesheetEntries, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [timesheetEntries.organizationId],
+    references: [organizations.id],
+  }),
   timesheet: one(timesheets, {
     fields: [timesheetEntries.timesheetId],
     references: [timesheets.id],
@@ -368,151 +188,49 @@ export const timesheetEntriesRelations = relations(timesheetEntries, ({ one }) =
     fields: [timesheetEntries.taskId],
     references: [tasks.id],
   }),
-  tenant: one(tenants, {
-    fields: [timesheetEntries.tenantId],
-    references: [tenants.id],
-  }),
 }));
 
-export const timeTrackingSessionsRelations = relations(timeTrackingSessions, ({ one }) => ({
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [auditLogs.organizationId],
+    references: [organizations.id],
+  }),
   user: one(users, {
-    fields: [timeTrackingSessions.userId],
+    fields: [auditLogs.userId],
     references: [users.id],
   }),
-  project: one(projects, {
-    fields: [timeTrackingSessions.projectId],
-    references: [projects.id],
-  }),
-  task: one(tasks, {
-    fields: [timeTrackingSessions.taskId],
-    references: [tasks.id],
-  }),
-  tenant: one(tenants, {
-    fields: [timeTrackingSessions.tenantId],
-    references: [tenants.id],
-  }),
 }));
 
-export const approvalWorkflowsRelations = relations(approvalWorkflows, ({ one }) => ({
-  tenant: one(tenants, {
-    fields: [approvalWorkflows.tenantId],
-    references: [tenants.id],
-  }),
-}));
+// Insert Schemas
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertTimesheetEntrySchema = createInsertSchema(timesheetEntries).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 
-// Zod schemas
-export const insertTenantSchema = createInsertSchema(tenants).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertDepartmentSchema = createInsertSchema(departments).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertProjectSchema = createInsertSchema(projects).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertProjectAssignmentSchema = createInsertSchema(projectAssignments).omit({
-  id: true,
-  assignedAt: true,
-});
-
-export const insertTaskSchema = createInsertSchema(tasks).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertTimesheetSchema = createInsertSchema(timesheets).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertTimesheetEntrySchema = createInsertSchema(timesheetEntries).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertTimeTrackingSessionSchema = createInsertSchema(timeTrackingSessions).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertApprovalWorkflowSchema = createInsertSchema(approvalWorkflows).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+// Login Schema
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
 });
 
 // Types
-export type Tenant = typeof tenants.$inferSelect;
-export type InsertTenant = z.infer<typeof insertTenantSchema>;
-
+export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
-export type Department = typeof departments.$inferSelect;
-export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
-
 export type Project = typeof projects.$inferSelect;
-export type InsertProject = z.infer<typeof insertProjectSchema>;
-
-export type ProjectAssignment = typeof projectAssignments.$inferSelect;
-export type InsertProjectAssignment = z.infer<typeof insertProjectAssignmentSchema>;
-
 export type Task = typeof tasks.$inferSelect;
-export type InsertTask = z.infer<typeof insertTaskSchema>;
-
 export type Timesheet = typeof timesheets.$inferSelect;
-export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
-
 export type TimesheetEntry = typeof timesheetEntries.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;
+
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
 export type InsertTimesheetEntry = z.infer<typeof insertTimesheetEntrySchema>;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
-export type TimeTrackingSession = typeof timeTrackingSessions.$inferSelect;
-export type InsertTimeTrackingSession = z.infer<typeof insertTimeTrackingSessionSchema>;
-
-export type ApprovalWorkflow = typeof approvalWorkflows.$inferSelect;
-export type InsertApprovalWorkflow = z.infer<typeof insertApprovalWorkflowSchema>;
-
-// Extended types for API responses
-export type UserWithTenant = User & { tenant: Tenant };
-export type ProjectWithTasks = Project & { 
-  tasks: Task[];
-  department?: Department;
-  manager?: User;
-  projectAssignments?: (ProjectAssignment & { user: User })[];
-};
-export type TimesheetWithEntries = Timesheet & { 
-  entries: (TimesheetEntry & { project: Project; task?: Task })[];
-  user: User;
-  tenant: Tenant;
-  approver?: User;
-};
-export type DepartmentWithUsers = Department & {
-  manager?: User;
-  projects: Project[];
-};
-
-// Multi-tenant context type
-export type TenantContext = {
-  tenantId: number;
-  tenant: Tenant;
-  user: User;
-};
+export type LoginData = z.infer<typeof loginSchema>;
