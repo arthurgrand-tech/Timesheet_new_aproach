@@ -6,51 +6,85 @@ services:
     image: postgres:16-alpine
     container_name: timesheet-db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: timesheet_db
+      POSTGRES_USER: ${DB_USER:-timesheet_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password_change_this}
+      POSTGRES_DB: ${DB_NAME:-timesheet_db}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d timesheet_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-timesheet_user} -d ${DB_NAME:-timesheet_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - timesheet-network
 
-  # Node.js Application
-  app:
-    build: .
-    container_name: timesheet-app
+  # Backend API Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: timesheet-backend
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/timesheet_db
-      JWT_SECRET: dev-jwt-secret
-      SESSION_SECRET: dev-session-secret
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${DB_USER:-timesheet_user}:${DB_PASSWORD:-secure_password_change_this}@postgres:5432/${DB_NAME:-timesheet_db}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      SESSION_SECRET: ${SESSION_SECRET:-your-session-secret-change-this}
+      PORT: 5000
     ports:
-      - "5000:5000"
+      - "${APP_PORT:-5000}:5000"
     volumes:
-      - ./client:/app/client
       - ./server:/app/server
       - ./shared:/app/shared
-      - ./package.json:/app/package.json
-      - ./tsconfig.json:/app/tsconfig.json
-      - ./vite.config.ts:/app/vite.config.ts
-      - ./drizzle.config.ts:/app/drizzle.config.ts
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        sleep 3 &&
-        echo 'Running database setup...' &&
-        npm run db:push &&
-        echo 'Starting development server...' &&
-        npm run dev
-      "
+    networks:
+      - timesheet-network
+    command: sh -c "npm run db:push && npm run dev:backend"
+
+  # Frontend React App
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: timesheet-frontend
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      VITE_API_URL: http://localhost:${APP_PORT:-5000}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app/client
+      - ./shared:/app/shared
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - timesheet-network
+    command: npm run dev:frontend
+
+  # Nginx Reverse Proxy (Optional - for production-like setup)
+  nginx:
+    image: nginx:alpine
+    container_name: timesheet-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - timesheet-network
+
+networks:
+  timesheet-network:
+    driver: bridge
 
 volumes:
   postgres_data:

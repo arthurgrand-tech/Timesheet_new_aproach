@@ -36,6 +36,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add this health check route to your server/index.ts file
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Add this near the end of your server setup, before app.listen()
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Error handling middleware
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+
 (async () => {
   const server = await registerRoutes(app);
 

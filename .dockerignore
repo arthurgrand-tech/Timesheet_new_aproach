@@ -1,6 +1,44 @@
 node_modules
-dist
+npm-debug.log
+.npm
+.nyc_output
+coverage
 .git
+.gitignore
+README.md
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+dist
+build
 *.log
 .DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.docker
+
+# Ignore docker files
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Ignore test files
+**/*.test.*
+**/__tests__/
+**/tests/
+coverage/
+
+# Ignore development files
+.replit
+replit.nix
+.replit.md
+
+# Ignore temporary files
+*.tmp
+*.temp
+.cache
